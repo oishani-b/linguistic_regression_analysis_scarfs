@@ -1,0 +1,688 @@
+---
+title: "regression_analysis_scarfs_linguistic_dataset"
+format: html
+editor: visual
+---
+
+## Loading in the Dataset:
+
+```{r}
+library(dplyr)
+library(tidyverse)
+df_scarfs = read_csv("full_nps.csv")
+
+```
+
+```{r}
+df_scarfs <- df_scarfs %>%
+  drop_na()
+```
+
+## Descriptive Statistics
+
+```{r}
+nrow(df_scarfs)
+```
+
+```{r}
+colnames(df_scarfs)
+```
+
+```{r}
+df_scarfs %>%
+  count(trial_result) %>%
+  mutate(percent = n/sum(n)*100)
+```
+
+```{r}
+df_scarfs %>%
+  count(pair_type) %>%
+  mutate(percent = n/sum(n)*100)
+```
+
+```{r}
+df_scarfs %>%
+  count(Dom_Pos) %>%
+  mutate(percent = n/sum(n)*100)
+```
+
+```{r}
+df_scarfs %>%
+    summarise(
+      mean_aoa = mean(AoA),
+      min_aoa = min(AoA),
+      max_aoa = max(AoA)
+      )
+```
+
+```{r}
+df_scarfs %>%
+    summarise(
+      mean_conc = mean(Conc.M),
+      min_conc = min(Conc.M),
+      max_conc = max(Conc.M)
+      )
+```
+
+```{r}
+df_scarfs %>%
+    summarise(
+      mean_log_freq = mean(Lg10WF),
+      min_log_freq = min(Lg10WF),
+      max_log_freq = max(Lg10WF)
+      )
+```
+
+## Visualizations
+
+First, I plot the outcomes Win vs Out of Time, replicating 2 plots from the analyses in the original paper looking at the density of each outcome across Log Frequency and Age of Acquisition of the target word. Then, I add my own visualization for Concreteness, and for all three linguistic variables for the outcomes Win vs Lost. This is a meaningful distinction as part 4.2 states, since Out of Time is failing to come to the right conclusion in time, whereas Lost is using a taboo word, so observing each pair of outcomes individually was more useful.
+
+```{r}
+library(ggplot2)
+```
+
+Win vs Out of Time
+
+```{r}
+df_win_oot <- df_scarfs %>%
+  filter(trial_result %in% c("Won", "Out of time"))
+```
+
+```{r}
+df_win_oot %>%
+  ggplot(aes(x = AoA, fill = trial_result)) +
+  geom_density(alpha = 0.5) +
+  theme_minimal()
+```
+
+```{r}
+df_win_oot %>%
+  ggplot(aes(x = Conc.M, fill = trial_result)) +
+  geom_density(alpha = 0.5) +
+  theme_minimal()
+```
+
+```{r}
+df_win_oot %>%
+  ggplot(aes(x = Lg10WF, fill = trial_result)) +
+  geom_density(alpha = 0.5) +
+  theme_minimal()
+```
+
+Won vs Lost
+
+```{r}
+df_win_lost <- df_scarfs %>%
+  filter(trial_result %in% c("Won", "Lost"))
+```
+
+```{r}
+df_win_lost %>%
+  ggplot(aes(x = AoA, fill = trial_result)) +
+  geom_density(alpha = 0.5) +
+  theme_minimal()
+```
+
+```{r}
+df_win_lost %>%
+  ggplot(aes(x = Conc.M, fill = trial_result)) +
+  geom_density(alpha = 0.5) +
+  theme_minimal()
+```
+
+```{r}
+df_win_lost %>%
+  ggplot(aes(x = Lg10WF, fill = trial_result)) +
+  geom_density(alpha = 0.5) +
+  theme_minimal()
+```
+
+Next, I was curious about the effect of concreteness in each category: Adjective, Noun and Verb, since, as hypothesized, Nouns have the highest concreteness. Does this effect extend similarly across other categories?
+
+```{r}
+df_scarfs %>%
+  group_by(Dom_Pos) %>%
+  summarize(mean_conc = mean(Conc.M))
+  
+```
+
+Looking at Concreteness for Adjectives and Nouns in Won vs Lost
+
+```{r}
+df_adj_lost <- df_win_lost %>%
+  filter(Dom_Pos == "Adjective")
+```
+
+```{r}
+df_adj_lost %>%
+  ggplot(aes(x = Conc.M, fill = trial_result)) +
+  geom_density(alpha = 0.5) +
+  theme_minimal()
+```
+
+```{r}
+df_noun_lost <- df_win_lost %>%
+  filter(Dom_Pos == "Noun")
+```
+
+```{r}
+df_noun_lost %>%
+  ggplot(aes(x = Conc.M, fill = trial_result)) +
+  geom_density(alpha = 0.5) +
+  theme_minimal()
+```
+
+\
+Looking at Concreteness for Friends vs Strangers in Won vs Out of Time
+
+```{r}
+df_friend_oot <- df_win_oot %>%
+  filter(pair_type == "Friend")
+```
+
+```{r}
+df_friend_oot %>%
+  ggplot(aes(x = Conc.M, fill = trial_result)) +
+  geom_density(alpha = 0.5) +
+  theme_minimal()
+```
+
+```{r}
+df_stranger_oot <- df_win_oot %>%
+  filter(pair_type == "Stranger")
+```
+
+```{r}
+df_stranger_oot %>%
+  ggplot(aes(x = Conc.M, fill = trial_result)) +
+  geom_density(alpha = 0.5) +
+  theme_minimal()
+```
+
+## Analyses
+
+An initial analysis closely follows the analysis in the publication looking at whether a model including random intercepts for Speaker, Guesser, Order, Session, and Deck and fixed effects of Trial with Partner, Part of Speech, Concreteness, Log Frequency, and Age of Acquisition. I worked with additional datasets containing more information about the behavioral variables for this analysis, following the outline provided in the original paper (CITE)
+
+#### Replicating Effects of Linguistic Properties of Target Word for Trial Outcome
+
+#### Reconstructing Dataset for Analysis
+
+```{r}
+library(lme4)
+library(dplyr)
+library(ggplot2)
+```
+
+```{r}
+df_behav = read_csv("behavioral_results_public.csv")
+```
+
+```{r}
+df_behav <- df_behav %>%
+  filter(Native_Speaker == "Yes") %>%
+  filter((session_id %in% c(10,15)) == FALSE)
+```
+
+```{r}
+df_behav$word = tolower(df_behav$card)
+nrow(df_behav)
+```
+
+```{r}
+df_concreteness = read_csv("brysbaert_norms.csv")
+df_concreteness$word = df_concreteness$Word
+```
+
+```{r}
+df_subtlex = read_csv("SUBTLEXusfrequencyabove1.csv")
+df_subtlex$word = df_subtlex$Word
+
+```
+
+```{r}
+df_aoa = read_csv("AoA_ratings_Kuperman_et_al_BRM.csv")
+df_aoa$AoA = df_aoa$Rating.Mean
+df_aoa$word = tolower(df_aoa$Word)
+```
+
+```{r}
+df_distance_to_taboo = read_csv("taboo_with_distances.csv")
+```
+
+```{r}
+df_distance_to_taboo = df_distance_to_taboo %>%
+  mutate(word = target) %>%
+  drop_na(avg_distance_to_taboo) %>%
+  dplyr::select(word, avg_distance_to_taboo) %>%
+  filter(word %in% df_behav$word)
+```
+
+```{r}
+df_merged = df_behav %>%
+  inner_join(df_concreteness, by = "word") %>%
+  inner_join(df_subtlex, by = "word") %>%
+  inner_join(df_aoa, by = "word") %>%
+  inner_join(df_distance_to_taboo, by = "word")
+nrow(df_merged)
+```
+
+```{r}
+df_merged = df_merged %>% 
+  drop_na(Conc.M) %>%
+  drop_na(Lg10WF) %>%
+  drop_na(AoA)
+nrow(df_merged)
+
+```
+
+```{r}
+df_merged = df_merged %>%
+  filter(Dom_Pos %in% c("Noun", "Verb", "Adjective"))
+nrow(df_merged)
+table(df_merged$Dom_Pos)
+```
+
+```{r}
+df_merged_unique = df_merged %>%
+  group_by(card) %>%
+  summarise(conc = mean(Conc.M, na.rm = TRUE))
+mean(df_merged_unique$conc)
+median(df_merged_unique$conc)
+```
+
+When running the analysis below, I had to make 2 changes: I had to code Win or Out of time as a 1,0 variable for glmer to work correctly, and I removed the random effect of order since it had a variance of zero, leading to a singular fit warning. After making these changes, the analysis corresponded to the findings in the paper.
+
+I only compared the full model with the models for no concreteness, no age of acquisition, and no frequency, since these were the factors I was most interested in, and some of the other variables, such as average semantic distance, were found to have no independent effects on outcomes in the paper. They were kept as random effects in the models to replicate the original analysis accounting for these variables as having possible effects.
+
+#### Win vs Out of Time Predictions on Concreteness, Age of Acquisition, and Frequency
+
+```{r}
+df_win_lose = df_merged %>%
+    filter(trial_result %in% c("Won", "Out of time")) %>%
+  mutate(success = ifelse(trial_result == "Won", 1, 0))
+nrow(df_win_lose)
+```
+
+```{r}
+model_full = glmer(data = df_win_lose,
+                   success ~ 
+                     trial_with_partner +
+                     Dom_Pos +
+                     avg_distance_to_taboo + 
+                     Conc.M +
+                     Lg10WF +
+                     AoA +
+                     (1 | ppt_id) +
+                     (1 | partner_id) +
+                     (1 | session_id) +
+                     (1 | color),
+                   control=glmerControl(optimizer="bobyqa"),
+                   family = binomial())
+```
+
+```{r}
+model_no_conc = glmer(data = df_win_lose,
+                   success ~ 
+                     trial_with_partner +
+                     avg_distance_to_taboo +
+                     Dom_Pos +
+                     # Conc.M +
+                     Lg10WF +
+                     AoA +
+                     (1 | ppt_id) +
+                     (1 | partner_id) +
+                     (1 | session_id) +
+                     (1 | color),
+                   control=glmerControl(optimizer="bobyqa"),
+                   family = binomial())
+```
+
+```{r}
+model_no_aoa = glmer(data = df_win_lose,
+                   success ~ 
+                     trial_with_partner +
+                     avg_distance_to_taboo + 
+                     Dom_Pos +
+                     Conc.M +
+                     Lg10WF +
+                    #  AoA +
+                     (1 | ppt_id) +
+                     (1 | partner_id) +
+                     (1 | session_id) +
+                     (1 | color),
+                   control=glmerControl(optimizer="bobyqa"),
+                   family = binomial())
+```
+
+```{r}
+model_no_frequency = glmer(data = df_win_lose,
+                   success ~ 
+                     trial_with_partner +
+                     avg_distance_to_taboo +
+                     Dom_Pos +
+                     Conc.M +
+                     # Lg10WF +
+                     AoA +
+                     (1 | ppt_id) +
+                     (1 | partner_id) +
+                     (1 | session_id) +
+                     (1 | color),
+                   control=glmerControl(optimizer="bobyqa"),
+                   family = binomial())
+```
+
+```{r}
+comparison_conc = anova(model_full, model_no_conc)
+comparison_conc
+```
+
+```{r}
+comparison_aoa = anova(model_full, model_no_aoa)
+comparison_aoa
+```
+
+```{r}
+comparison_freq = anova(model_full, model_no_frequency)
+comparison_freq
+```
+
+```{r}
+p.adjust(c(comparison_conc$`Pr(>Chisq)`[2],
+           comparison_aoa$`Pr(>Chisq)`[2],
+           comparison_freq$`Pr(>Chisq)`[2]),
+         method="holm")
+```
+
+These results correspond to the results in the paper:
+
+Concreteness improves model fit \[X\^2(1) = 21.81, p\<.001\]
+
+Age of Acquisition improves model fit \[X\^2(1) = 19.36, p\<.001\]
+
+Log Frequency improves model fit \[X\^2(1) = 30.37, p\<.001\]
+
+#### Win vs Lost Predictions on Concreteness, Age of Acquisition, and Frequency
+
+In this filtered dataset, both Order and ppt_id were found to have zero variance, so I dropped them as random effects. In the model without concreteness, color also had zero variance and had to be dropped. After these corrections, the analysis corresponded to the analyses in the paper.
+
+```{r}
+df_win_lose2 = df_merged %>%
+    filter(trial_result %in% c("Won", "Lost")) %>%
+  mutate(success = ifelse(trial_result == "Won", 1, 0))
+nrow(df_win_lose2)
+```
+
+```{r}
+model_full = glmer(data = df_win_lose2,
+                   success ~ 
+                     trial_with_partner +
+                     Dom_Pos +
+                     avg_distance_to_taboo + 
+                     Conc.M +
+                     Lg10WF +
+                     AoA +
+                     (1 | partner_id) +
+                     (1 | session_id) +
+                     (1 | color),
+                   control=glmerControl(optimizer="bobyqa"),
+                   family = binomial())
+```
+
+```{r}
+model_no_conc = glmer(data = df_win_lose2,
+                   success ~ 
+                     trial_with_partner +
+                     avg_distance_to_taboo +
+                     Dom_Pos +
+                     # Conc.M +
+                     Lg10WF +
+                     AoA +
+                     (1 | partner_id) +
+                     (1 | session_id),
+                   control=glmerControl(optimizer="bobyqa"),
+                   family = binomial())
+```
+
+```{r}
+model_no_aoa = glmer(data = df_win_lose2,
+                   success ~ 
+                     trial_with_partner +
+                     Dom_Pos +
+                     avg_distance_to_taboo + 
+                     Conc.M +
+                     Lg10WF +
+                     # AoA +
+                     (1 | partner_id) +
+                     (1 | session_id) +
+                     (1 | color),
+                   control=glmerControl(optimizer="bobyqa"),
+                   family = binomial())
+```
+
+```{r}
+model_no_frequency = glmer(data = df_win_lose2,
+                   success ~ 
+                     trial_with_partner +
+                     Dom_Pos +
+                     avg_distance_to_taboo + 
+                     Conc.M +
+                     # Lg10WF +
+                     AoA +
+                     (1 | partner_id) +
+                     (1 | session_id) +
+                     (1 | color),
+                   control=glmerControl(optimizer="bobyqa"),
+                   family = binomial())
+```
+
+```{r}
+comparison_conc = anova(model_full, model_no_conc)
+comparison_conc
+```
+
+```{r}
+comparison_aoa = anova(model_full, model_no_aoa)
+comparison_aoa
+```
+
+```{r}
+comparison_freq = anova(model_full, model_no_frequency)
+comparison_freq
+```
+
+```{r}
+p.adjust(c(comparison_conc$`Pr(>Chisq)`[2],
+           comparison_aoa$`Pr(>Chisq)`[2],
+           comparison_freq$`Pr(>Chisq)`[2]),
+         method="holm")
+```
+
+These results correspond to the results in the paper:
+
+Concreteness improves model fit \[X\^2(1) = 20.67, p\<.001\]
+
+Age of Acquisition improves model fit \[X\^2(1) = 13.7, p\<.001\]
+
+Log Frequency improves model fit \[X\^2(1) = 61.85, p\<.001\]
+
+## Further Analysis
+
+#### Does the effect of concreteness vary for adjectives vs nouns?
+
+First, we look at Win vs Out of Time, comparing a model with an interaction term between Concreteness and Part of Sentence to a model without one.
+
+```{r}
+df_adj_noun_win_oot <- df_win_oot %>%
+  mutate(success = ifelse(trial_result == "Won", 1, 0)) %>%
+  filter(Dom_Pos %in% c("Noun", "Adjective"))
+```
+
+```{r}
+model_conc_adj_noun <- glmer(
+  success ~
+    Conc.M * Dom_Pos +
+    Lg10WF +
+    AoA +
+    pair_type +
+    (1 | ppt_id) +
+    (1 | card),
+  data = df_adj_noun_win_oot,
+  family = binomial(),
+  control = glmerControl(optimizer = "bobyqa")
+)
+summary(model_conc_adj_noun)
+```
+
+```{r}
+model_conc_no_int_adj_noun <- glmer(
+  success ~
+    Conc.M + Dom_Pos +
+    Lg10WF +
+    AoA +
+    pair_type +
+    (1 | ppt_id) +
+    (1 | card),
+  data = df_adj_noun_win_oot,
+  family = binomial(),
+  control = glmerControl(optimizer = "bobyqa")
+)
+summary(model_conc_no_int_adj_noun)
+```
+
+```{r}
+anova(model_conc_adj_noun, model_conc_no_int_adj_noun)
+```
+
+Then, we look at Win vs Lost, again comparing a model with an interaction term to a model without one.
+
+```{r}
+df_adj_noun_win_lost <- df_win_lost %>%
+  mutate(success = ifelse(trial_result == "Won", 1, 0)) %>%
+  filter(Dom_Pos %in% c("Noun", "Adjective"))
+```
+
+```{r}
+model_conc_adj_noun <- glmer(
+  success ~
+    Conc.M * Dom_Pos +
+    Lg10WF +
+    AoA +
+    pair_type +
+    (1 | ppt_id) +
+    (1 | card),
+  data = df_adj_noun_win_lost,
+  family = binomial(),
+  control = glmerControl(optimizer = "bobyqa")
+)
+summary(model_conc_adj_noun)
+```
+
+```{r}
+model_conc_no_int_adj_noun <- glmer(
+  success ~
+    Conc.M + Dom_Pos +
+    Lg10WF +
+    AoA +
+    pair_type +
+    (1 | ppt_id) +
+    (1 | card),
+  data = df_adj_noun_win_lost,
+  family = binomial(),
+  control = glmerControl(optimizer = "bobyqa")
+)
+summary(model_conc_no_int_adj_noun)
+```
+
+```{r}
+anova(model_conc_adj_noun, model_conc_no_int_adj_noun)
+```
+
+For the Win vs Lost comparison, the interaction effect is significant (p \< 0.05), so the effect of concreteness is stronger for nouns than adjectives in predicting wins over losses. So, concreteness does influence nouns differently than adjectives for Won vs Lost cases.
+
+#### Does the effect of concreteness vary for friends vs strangers?
+
+First, we look at Win vs Out of Time, comparing a model with an interaction term between Concreteness and Friend/Stranger (pair_type) to a model without one.
+
+```{r}
+df_friend_win_oot <- df_win_oot %>%
+  mutate(success = ifelse(trial_result == "Won", 1, 0))
+```
+
+```{r}
+model_conc_friend <- glmer(
+  success ~
+    Conc.M * pair_type +
+    Lg10WF +
+    AoA +
+    Dom_Pos +
+    (1 | ppt_id) +
+    (1 | card),
+  data = df_friend_win_oot,
+  family = binomial(),
+  control = glmerControl(optimizer = "bobyqa")
+)
+summary(model_conc_friend)
+```
+
+```{r}
+model_conc_no_int_friend <- glmer(
+  success ~
+    Conc.M + pair_type +
+    Lg10WF +
+    AoA +
+    Dom_Pos +
+    (1 | ppt_id) +
+    (1 | card),
+  data = df_friend_win_oot,
+  family = binomial(),
+  control = glmerControl(optimizer = "bobyqa")
+)
+summary(model_conc_no_int_friend)
+```
+
+```{r}
+anova(model_conc_friend, model_conc_no_int_friend)
+```
+
+The anova shows that concreteness negatively influences the winning outcome for strangers, and the effect of the interaction is significant (p \< 0.05). This is interesting, showing that for strangers, the effect of concreteness is smaller than the effect for friends.
+
+```{r}
+df_friend_win_lost <- df_win_lost %>%
+  mutate(success = ifelse(trial_result == "Won", 1, 0))
+```
+
+```{r}
+model_conc_friend <- glmer(
+  success ~
+    Conc.M * pair_type +
+    Lg10WF +
+    AoA +
+    Dom_Pos +
+    (1 | ppt_id) +
+    (1 | card),
+  data = df_friend_win_lost,
+  family = binomial(),
+  control = glmerControl(optimizer = "bobyqa")
+)
+summary(model_conc_friend)
+```
+
+```{r}
+model_conc_no_int_friend <- glmer(
+  success ~
+    Conc.M + pair_type +
+    Lg10WF +
+    AoA +
+    Dom_Pos +
+    (1 | ppt_id) +
+    (1 | card),
+  data = df_friend_win_lost,
+  family = binomial(),
+  control = glmerControl(optimizer = "bobyqa")
+)
+summary(model_conc_no_int_friend)
+```
+
+```{r}
+anova(model_conc_friend, model_conc_no_int_friend)
+```
